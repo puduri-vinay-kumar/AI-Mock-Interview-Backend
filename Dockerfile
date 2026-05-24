@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+
+RUN mkdir -p uploads/resumes uploads/audio uploads/voice
+
+EXPOSE 5000
+
+CMD ["node", "src/server.js"]
