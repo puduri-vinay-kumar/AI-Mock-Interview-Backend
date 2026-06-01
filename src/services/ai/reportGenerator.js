@@ -4,6 +4,7 @@ const {
 } = require("./provider.service");
 const { buildReportPrompt } = require("./promptTemplates");
 const { calculateWeightedScores } = require("./scoringEngine");
+const logger = require("../../utils/logger");
 
 const reportSchema = {
   type: "object",
@@ -86,27 +87,31 @@ const generateInterviewReport = async ({ interview }) => {
   const scores = calculateWeightedScores(evaluations);
 
   if (isAIProviderConfigured()) {
-    const aiResult = await createStructuredResponse({
-      name: "interview_report",
-      schema: reportSchema,
-      instructions: buildReportPrompt({
-        role: interview.role,
-        interviewType: interview.interviewType,
-      }),
-      input: {
-        role: interview.role,
-        interviewType: interview.interviewType,
-        feedback: interview.feedback,
-        evaluations,
-        scores,
-      },
-    });
+    try {
+      const aiResult = await createStructuredResponse({
+        name: "interview_report",
+        schema: reportSchema,
+        instructions: buildReportPrompt({
+          role: interview.role,
+          interviewType: interview.interviewType,
+        }),
+        input: {
+          role: interview.role,
+          interviewType: interview.interviewType,
+          feedback: interview.feedback,
+          evaluations,
+          scores,
+        },
+      });
 
-    if (aiResult) {
-      return {
-        ...aiResult,
-        scores,
-      };
+      if (aiResult) {
+        return {
+          ...aiResult,
+          scores,
+        };
+      }
+    } catch (error) {
+      logger.warn(`Report generation fallback engaged: ${error.message}`);
     }
   }
 

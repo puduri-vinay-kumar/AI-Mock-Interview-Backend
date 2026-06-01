@@ -1,15 +1,20 @@
 const { transcribeAudioFile, isAIProviderConfigured } = require("../provider.service");
+const logger = require("../../../utils/logger");
 
 const transcribeAudio = async (audioFile) => {
   if (isAIProviderConfigured()) {
-    const result = await transcribeAudioFile({
-      filePath: audioFile.filePath,
-      prompt: audioFile.prompt,
-      mimeType: audioFile.mimeType,
-    });
+    try {
+      const result = await transcribeAudioFile({
+        filePath: audioFile.filePath,
+        prompt: audioFile.prompt,
+        mimeType: audioFile.mimeType,
+      });
 
-    if (result) {
-      return result;
+      if (result) {
+        return result;
+      }
+    } catch (error) {
+      logger.warn(`Speech-to-text fallback engaged: ${error.message}`);
     }
   }
 

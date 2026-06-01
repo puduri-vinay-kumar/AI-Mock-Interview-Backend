@@ -17,6 +17,9 @@ const getResumeProfile = async (interview) => {
   return Resume.findOne({ userId: interview.userId }).sort({ uploadedAt: -1 });
 };
 
+const hasEvaluation = (answer) =>
+  answer?.evaluation && typeof answer.evaluation.score === "number";
+
 const bootstrapInterviewSession = async ({
   userId,
   role,
@@ -99,6 +102,10 @@ const evaluateAllAnswers = async (interview, answers) => {
 
   return Promise.all(
     answers.map(async (answer) => {
+      if (hasEvaluation(answer)) {
+        return answer;
+      }
+
       const matchedQuestion =
         questionLookup.get(answer.questionId) ||
         interview.questions.find((question) => question.question === answer.question);
@@ -262,27 +269,40 @@ const processRealtimeAnswer = async ({
 };
 
 const finalizeInterviewSession = async (interview) => {
+  const answersWithEvaluations = await evaluateAllAnswers(interview, interview.answers || []);
+  const evaluations = answersWithEvaluations.map((answer) => answer.evaluation);
+  const scores = calculateWeightedScores(evaluations);
+  const feedback = await generateFeedback({
+    role: interview.role,
+    interviewType: interview.interviewType,
+    evaluations,
+  });
+
+  interview.answers = answersWithEvaluations;
+  interview.scores = scores;
+  interview.feedback = feedback;
+
   const report = await generateInterviewReport({ interview });
 
   return {
     interviewId: interview._id,
-    technicalKnowledge: interview.scores.technicalKnowledge,
-    communication: interview.scores.communication,
-    confidence: interview.scores.confidence,
-    problemSolving: interview.scores.problemSolving,
-    conceptualClarity: interview.scores.conceptualClarity,
-    strengths: interview.feedback.strengths,
-    weaknesses: interview.feedback.weaknesses,
-    suggestedLearnings: interview.feedback.suggestedLearnings,
-    overallScore: interview.scores.overallScore,
+    technicalKnowledge: scores.technicalKnowledge,
+    communication: scores.communication,
+    confidence: scores.confidence,
+    problemSolving: scores.problemSolving,
+    conceptualClarity: scores.conceptualClarity,
+    strengths: feedback.strengths,
+    weaknesses: feedback.weaknesses,
+    suggestedLearnings: feedback.suggestedLearnings,
+    overallScore: scores.overallScore,
     detailedAnalysis: report.detailedAnalysis,
     topicScores: report.topicScores,
     radarMetrics: {
-      technicalKnowledge: interview.scores.technicalKnowledge,
-      communication: interview.scores.communication,
-      confidence: interview.scores.confidence,
-      problemSolving: interview.scores.problemSolving,
-      conceptualClarity: interview.scores.conceptualClarity,
+      technicalKnowledge: scores.technicalKnowledge,
+      communication: scores.communication,
+      confidence: scores.confidence,
+      problemSolving: scores.problemSolving,
+      conceptualClarity: scores.conceptualClarity,
     },
     learningRecommendations: report.learningRecommendations,
   };

@@ -4,6 +4,7 @@ const {
   isAIProviderConfigured,
 } = require("./provider.service");
 const { getQuestionPrompt } = require("./promptTemplates");
+const logger = require("../../utils/logger");
 
 const singleQuestionSchema = {
   type: "object",
@@ -90,15 +91,19 @@ const generateInterviewQuestion = async (context) => {
   const prompt = getQuestionPrompt(context);
 
   if (isAIProviderConfigured()) {
-    const aiResult = await createStructuredResponse({
-      name: "interview_question",
-      schema: singleQuestionSchema,
-      instructions: prompt,
-      input: context,
-    });
+    try {
+      const aiResult = await createStructuredResponse({
+        name: "interview_question",
+        schema: singleQuestionSchema,
+        instructions: prompt,
+        input: context,
+      });
 
-    if (aiResult) {
-      return normalizeQuestion(aiResult, "ai");
+      if (aiResult) {
+        return normalizeQuestion(aiResult, "ai");
+      }
+    } catch (error) {
+      logger.warn(`Question generation fallback engaged: ${error.message}`);
     }
   }
 
@@ -109,15 +114,19 @@ const generateQuestionSet = async (context, count = 3) => {
   const prompt = `${getQuestionPrompt(context)} Generate ${count} varied questions that progress logically.`;
 
   if (isAIProviderConfigured()) {
-    const aiResult = await createStructuredResponse({
-      name: "interview_question_set",
-      schema: questionListSchema,
-      instructions: prompt,
-      input: context,
-    });
+    try {
+      const aiResult = await createStructuredResponse({
+        name: "interview_question_set",
+        schema: questionListSchema,
+        instructions: prompt,
+        input: context,
+      });
 
-    if (aiResult?.questions?.length) {
-      return aiResult.questions.map((question) => normalizeQuestion(question, "ai"));
+      if (aiResult?.questions?.length) {
+        return aiResult.questions.map((question) => normalizeQuestion(question, "ai"));
+      }
+    } catch (error) {
+      logger.warn(`Question set fallback engaged: ${error.message}`);
     }
   }
 

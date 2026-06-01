@@ -3,6 +3,7 @@ const {
   isAIProviderConfigured,
 } = require("./provider.service");
 const { buildFeedbackPrompt } = require("./promptTemplates");
+const logger = require("../../utils/logger");
 
 const feedbackSchema = {
   type: "object",
@@ -46,15 +47,19 @@ const generateFeedback = async ({ role, interviewType, evaluations }) => {
   });
 
   if (isAIProviderConfigured()) {
-    const aiResult = await createStructuredResponse({
-      name: "interview_feedback",
-      schema: feedbackSchema,
-      instructions: prompt,
-      input: evaluations,
-    });
+    try {
+      const aiResult = await createStructuredResponse({
+        name: "interview_feedback",
+        schema: feedbackSchema,
+        instructions: prompt,
+        input: evaluations,
+      });
 
-    if (aiResult) {
-      return aiResult;
+      if (aiResult) {
+        return aiResult;
+      }
+    } catch (error) {
+      logger.warn(`Feedback generation fallback engaged: ${error.message}`);
     }
   }
 

@@ -11,6 +11,27 @@ const {
   finalizeInterviewSession,
 } = require("../services/interview/interviewSessionManager");
 
+const updateCompletedInterviewStats = async (userId, fallbackOverallScore = 0) => {
+  const stats = await Interview.aggregate([
+    { $match: { userId, status: "completed" } },
+    {
+      $group: {
+        _id: "$userId",
+        averageScore: { $avg: "$scores.overallScore" },
+        total: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const averageScore = stats[0]?.averageScore || fallbackOverallScore;
+  const interviewsAttempted = stats[0]?.total || 1;
+
+  await User.findByIdAndUpdate(userId, {
+    averageScore: Number(averageScore.toFixed(2)),
+    interviewsAttempted,
+  });
+};
+
 exports.createInterview = asyncHandler(async (req, res) => {
   const { role, experienceLevel, interviewType, duration, resumeId, previousScore } =
     req.body;
@@ -108,24 +129,7 @@ exports.updateInterviewStatus = asyncHandler(async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
-    const stats = await Interview.aggregate([
-      { $match: { userId: req.user._id, status: "completed" } },
-      {
-        $group: {
-          _id: "$userId",
-          averageScore: { $avg: "$scores.overallScore" },
-          total: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const averageScore = stats[0]?.averageScore || reportPayload.overallScore;
-    const interviewsAttempted = stats[0]?.total || 1;
-
-    await User.findByIdAndUpdate(req.user._id, {
-      averageScore: Number(averageScore.toFixed(2)),
-      interviewsAttempted,
-    });
+    await updateCompletedInterviewStats(req.user._id, reportPayload.overallScore);
   }
 
   return successResponse(res, "Interview status updated successfully", {
@@ -236,12 +240,13 @@ exports.completeInterview = asyncHandler(async (req, res) => {
 
   interview.status = "completed";
   const reportPayload = await finalizeInterviewSession(interview);
+  await interview.save();
   const report = await Report.findOneAndUpdate(
     { interviewId: interview._id },
     reportPayload,
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
-  await interview.save();
+  await updateCompletedInterviewStats(req.user._id, reportPayload.overallScore);
 
   return successResponse(res, "Interview completed successfully", {
     interview,

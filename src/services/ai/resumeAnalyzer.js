@@ -7,6 +7,7 @@ const {
   isAIProviderConfigured,
 } = require("./provider.service");
 const { buildResumeAnalysisPrompt } = require("./promptTemplates");
+const logger = require("../../utils/logger");
 
 const resumeSchema = {
   type: "object",
@@ -136,21 +137,25 @@ const analyzeResume = async ({ filePath, originalName, mimeType }) => {
   }
 
   if (isAIProviderConfigured()) {
-    const aiResult = await createStructuredResponse({
-      name: "resume_analysis",
-      schema: resumeSchema,
-      instructions: buildResumeAnalysisPrompt({ fileName: originalName }),
-      input: trimmedText.slice(0, 18000),
-    });
+    try {
+      const aiResult = await createStructuredResponse({
+        name: "resume_analysis",
+        schema: resumeSchema,
+        instructions: buildResumeAnalysisPrompt({ fileName: originalName }),
+        input: trimmedText.slice(0, 18000),
+      });
 
-    if (aiResult) {
-      return {
-        ...aiResult,
-        rawText: trimmedText,
-        fileType: fileExtension.replace(".", "") || mimeType,
-        parserUsed,
-        aiEnhanced: true,
-      };
+      if (aiResult) {
+        return {
+          ...aiResult,
+          rawText: trimmedText,
+          fileType: fileExtension.replace(".", "") || mimeType,
+          parserUsed,
+          aiEnhanced: true,
+        };
+      }
+    } catch (error) {
+      logger.warn(`Resume analysis fallback engaged: ${error.message}`);
     }
   }
 

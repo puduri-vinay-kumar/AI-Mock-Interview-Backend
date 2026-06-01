@@ -5,6 +5,13 @@ const { v4: uuidv4 } = require("uuid");
 
 let geminiClient;
 
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const DEFAULT_RETRY_ATTEMPTS = 1;
+const AUDIO_RETRY_ATTEMPTS = 2;
+const DEFAULT_RETRY_DELAY_MS = 1200;
+const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 5000;
+const DEFAULT_AUDIO_TIMEOUT_MS = Number(process.env.GEMINI_AUDIO_TIMEOUT_MS) || 15000;
+
 const isGeminiConfigured = () => Boolean(process.env.GEMINI_API_KEY);
 
 const getClient = () => {
@@ -25,12 +32,73 @@ const createServiceError = (message, error) => {
   const serviceError = new Error(message);
   serviceError.name = "GeminiError";
   serviceError.service = "gemini";
-  serviceError.statusCode = error?.status || 502;
+  const derivedStatusCode =
+    error?.status ||
+    error?.statusCode ||
+    (String(error?.message || "").includes("503") ? 503 : null) ||
+    (String(error?.message || "").includes("429") ? 429 : null) ||
+    502;
+  serviceError.statusCode = derivedStatusCode;
   serviceError.details = {
     originalMessage: error?.message,
     code: error?.code,
   };
   return serviceError;
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const withTimeout = async (operation, timeoutMs, timeoutMessage) => {
+  return Promise.race([
+    operation(),
+    new Promise((_, reject) => {
+      const timeoutError = new Error(timeoutMessage);
+      timeoutError.status = 504;
+      setTimeout(() => reject(timeoutError), timeoutMs);
+    }),
+  ]);
+};
+
+const isRetryableError = (error) => {
+  const statusCode = error?.status || error?.statusCode;
+  if (RETRYABLE_STATUS_CODES.has(statusCode)) {
+    return true;
+  }
+
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("503") ||
+    message.includes("unavailable") ||
+    message.includes("fetch failed") ||
+    message.includes("429") ||
+    message.includes("quota")
+  );
+};
+
+const withRetry = async (
+  operation,
+  timeoutMs,
+  timeoutMessage,
+  maxAttempts = DEFAULT_RETRY_ATTEMPTS
+) => {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await withTimeout(operation, timeoutMs, timeoutMessage);
+    } catch (error) {
+      lastError = error;
+
+      if (!isRetryableError(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      const backoffMs = DEFAULT_RETRY_DELAY_MS * attempt;
+      await sleep(backoffMs);
+    }
+  }
+
+  throw lastError;
 };
 
 const createStructuredResponse = async ({
@@ -45,29 +113,34 @@ const createStructuredResponse = async ({
   }
 
   try {
-    const response = await client.models.generateContent({
-      model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `${instructions}\n\nInput:\n${
-                typeof input === "string" ? input : JSON.stringify(input, null, 2)
-              }`,
-            },
-          ],
-        },
-      ],
-      config: {
-        responseFormat: {
-          text: {
-            mimeType: "application/json",
+    const response = await withRetry(
+      () =>
+      client.models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `${instructions}\n\nInput:\n${
+                  typeof input === "string" ? input : JSON.stringify(input, null, 2)
+                }`,
+              },
+            ],
           },
+        ],
+        config: {
+          responseFormat: {
+            text: {
+              mimeType: "application/json",
+            },
+          },
+          responseSchema: schema,
         },
-        responseSchema: schema,
-      },
-    });
+      }),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+      "Gemini structured response timed out"
+    );
 
     return response?.text ? JSON.parse(response.text) : null;
   } catch (error) {
@@ -86,21 +159,26 @@ const createTextResponse = async ({
   }
 
   try {
-    const response = await client.models.generateContent({
-      model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `${instructions}\n\nInput:\n${
-                typeof input === "string" ? input : JSON.stringify(input, null, 2)
-              }`,
-            },
-          ],
-        },
-      ],
-    });
+    const response = await withRetry(
+      () =>
+      client.models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `${instructions}\n\nInput:\n${
+                  typeof input === "string" ? input : JSON.stringify(input, null, 2)
+                }`,
+              },
+            ],
+          },
+        ],
+      }),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+      "Gemini text response timed out"
+    );
 
     return response?.text || null;
   } catch (error) {
@@ -148,37 +226,49 @@ const transcribeAudioFile = async ({
   }
 
   try {
-    const uploadedFile = await client.files.upload({
-      file: filePath,
-      config: { mimeType },
-    });
+    const uploadedFile = await withRetry(
+      () =>
+        client.files.upload({
+          file: filePath,
+          config: { mimeType },
+        }),
+      DEFAULT_AUDIO_TIMEOUT_MS,
+      "Gemini audio upload timed out",
+      AUDIO_RETRY_ATTEMPTS
+    );
 
-    const response = await client.models.generateContent({
-      model,
-      contents: {
-        parts: [
-          {
-            fileData: {
-              fileUri: uploadedFile.uri,
-              mimeType: uploadedFile.mimeType || mimeType,
+    const response = await withRetry(
+      () =>
+      client.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              fileData: {
+                fileUri: uploadedFile.uri,
+                mimeType: uploadedFile.mimeType || mimeType,
+              },
+            },
+            {
+              text:
+                prompt ||
+                "Generate a clear transcript of the speech with timestamps and concise summary.",
+            },
+          ],
+        },
+        config: {
+          responseFormat: {
+            text: {
+              mimeType: "application/json",
             },
           },
-          {
-            text:
-              prompt ||
-              "Generate a clear transcript of the speech with timestamps and concise summary.",
-          },
-        ],
-      },
-      config: {
-        responseFormat: {
-          text: {
-            mimeType: "application/json",
-          },
+          responseSchema: audioTranscriptionSchema,
         },
-        responseSchema: audioTranscriptionSchema,
-      },
-    });
+      }),
+      DEFAULT_AUDIO_TIMEOUT_MS,
+      "Gemini audio transcription timed out",
+      AUDIO_RETRY_ATTEMPTS
+    );
 
     const parsed = response?.text ? JSON.parse(response.text) : null;
     const transcript = parsed?.segments?.map((segment) => segment.content).join(" ") || "";
@@ -229,20 +319,25 @@ const generateSpeechFile = async ({
   }
 
   try {
-    const response = await client.models.generateContent({
-      model,
-      contents: [{ parts: [{ text }] }],
-      config: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voice,
+    const response = await withRetry(
+      () =>
+      client.models.generateContent({
+        model,
+        contents: [{ parts: [{ text }] }],
+        config: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: voice,
+              },
             },
           },
         },
-      },
-    });
+      }),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+      "Gemini speech generation timed out"
+    );
 
     const base64Data =
       response?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;

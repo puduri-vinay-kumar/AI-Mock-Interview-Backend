@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: ai-mock-interview-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AI_PROVIDER
+        value: gemini
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: MAX_FILE_SIZE
+        value: "5242880"
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: GEMINI_TTS_MODEL
+        value: gemini-3.1-flash-tts-preview
+      - key: GEMINI_TTS_VOICE
+        value: Kore
+      - key: INTERVIEW_MAX_QUESTIONS
+        value: "6"
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: SOCKET_CORS_ORIGIN
+        sync: false

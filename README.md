@@ -225,6 +225,7 @@ This repo now includes:
 - [.dockerignore](/C:/AI%20Mock%20Interview/backend/.dockerignore)
 - [.env.example](/C:/AI%20Mock%20Interview/backend/.env.example)
 - [railway.toml](/C:/AI%20Mock%20Interview/backend/railway.toml)
+- [render.yaml](/C:/AI%20Mock%20Interview/backend/render.yaml)
 
 Typical container run flow:
 
@@ -276,6 +277,54 @@ This backend is prepared for Railway with:
 - Railway variables must be reviewed and deployed after changes before they take effect.
 - Railway uses ephemeral disk by default, so uploaded resumes and generated voice files are not durable across redeploys. For production persistence, move uploads to object storage later.
 - If your frontend is deployed separately, update `CLIENT_URL` and `SOCKET_CORS_ORIGIN` after you know the final frontend domain.
+
+## Render Deployment
+
+This backend is also prepared for Render with:
+
+- Docker-based deploys from the repo `Dockerfile`
+- free web service compatibility
+- healthcheck path: `/api/health`
+- optional Blueprint config in `render.yaml`
+
+### Render Deploy Steps
+
+1. Go to Render and click `New > Blueprint` or `New > Web Service`.
+2. Connect your GitHub repo: `AI-Mock-Interview-Backend`.
+3. If using `Blueprint`, Render can read `render.yaml` automatically.
+4. If using `Web Service` manually:
+   - Environment: `Docker`
+   - Branch: `main`
+   - Instance type: `Free`
+5. Add the required environment variables listed below.
+6. Deploy the service.
+
+### Required Render Variables
+
+- `MONGO_URI`
+- `JWT_SECRET`
+- `GEMINI_API_KEY`
+- `CLIENT_URL`
+- `SOCKET_CORS_ORIGIN`
+
+### Recommended Render Variables
+
+- `NODE_ENV=production`
+- `AI_PROVIDER=gemini`
+- `JWT_EXPIRES_IN=7d`
+- `COOKIE_SECURE=true`
+- `MAX_FILE_SIZE=5242880`
+- `GEMINI_MODEL=gemini-3.5-flash`
+- `GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview`
+- `GEMINI_TTS_VOICE=Kore`
+- `INTERVIEW_MAX_QUESTIONS=6`
+
+### Important Render Notes
+
+- Render free web services spin down after 15 minutes of no inbound traffic and may take about a minute to wake up again.
+- Render free services use an ephemeral filesystem, so uploaded files and generated voice files are not durable.
+- Render expects your app to bind on `0.0.0.0` and usually defaults to port `10000`; this backend already supports `process.env.PORT`.
+- Render automatically provides useful runtime variables such as `RENDER_EXTERNAL_URL` and `RENDER_EXTERNAL_HOSTNAME`.
 
 ## Security
 

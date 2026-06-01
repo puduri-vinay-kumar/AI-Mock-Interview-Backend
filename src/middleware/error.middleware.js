@@ -45,5 +45,11 @@ exports.errorHandler = (error, req, res, next) => {
     details = error.details || {};
   }
 
+  if (error.name === "GeminiError" || error.service === "gemini") {
+    statusCode = error.statusCode || 503;
+    message = error.message || "Gemini service request failed";
+    details = error.details || {};
+  }
+
   return errorResponse(res, message, details, statusCode);
 };

@@ -3,6 +3,7 @@ const {
   isAIProviderConfigured,
 } = require("./provider.service");
 const { buildEvaluationPrompt } = require("./promptTemplates");
+const logger = require("../../utils/logger");
 
 const evaluationSchema = {
   type: "object",
@@ -84,26 +85,30 @@ const evaluateAnswer = async ({
   });
 
   if (isAIProviderConfigured()) {
-    const aiResult = await createStructuredResponse({
-      name: "answer_evaluation",
-      schema: evaluationSchema,
-      instructions: prompt,
-      input: {
-        question,
-        answer,
-      },
-    });
+    try {
+      const aiResult = await createStructuredResponse({
+        name: "answer_evaluation",
+        schema: evaluationSchema,
+        instructions: prompt,
+        input: {
+          question,
+          answer,
+        },
+      });
 
-    if (aiResult) {
-      return {
-        ...aiResult,
-        score: clampScore(aiResult.score),
-        technicalAccuracy: clampScore(aiResult.technicalAccuracy),
-        clarity: clampScore(aiResult.clarity),
-        communication: clampScore(aiResult.communication),
-        confidence: clampScore(aiResult.confidence),
-        depthOfExplanation: clampScore(aiResult.depthOfExplanation),
-      };
+      if (aiResult) {
+        return {
+          ...aiResult,
+          score: clampScore(aiResult.score),
+          technicalAccuracy: clampScore(aiResult.technicalAccuracy),
+          clarity: clampScore(aiResult.clarity),
+          communication: clampScore(aiResult.communication),
+          confidence: clampScore(aiResult.confidence),
+          depthOfExplanation: clampScore(aiResult.depthOfExplanation),
+        };
+      }
+    } catch (error) {
+      logger.warn(`Answer evaluation fallback engaged: ${error.message}`);
     }
   }
 

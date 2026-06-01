@@ -1,4 +1,5 @@
 const asyncHandler = require("../middleware/async.middleware");
+const fs = require("fs");
 const { successResponse } = require("../utils/responseHandler");
 const { transcribeAudio } = require("../services/ai/voice/speechToText");
 const { generateSpeech } = require("../services/ai/voice/textToSpeech");
@@ -17,15 +18,21 @@ exports.transcribeInterviewAudio = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  const result = await transcribeAudio({
-    filePath: req.file.path,
-    mimeType: req.file.mimetype,
-    prompt:
-      req.body.prompt ||
-      "This is a mock interview transcript with technical and behavioral discussion.",
-  });
+  try {
+    const result = await transcribeAudio({
+      filePath: req.file.path,
+      mimeType: req.file.mimetype,
+      prompt:
+        req.body.prompt ||
+        "This is a mock interview transcript with technical and behavioral discussion.",
+    });
 
-  return successResponse(res, "Audio transcribed successfully", result, 201);
+    return successResponse(res, "Audio transcribed successfully", result, 201);
+  } finally {
+    if (req.file?.path) {
+      await fs.promises.unlink(req.file.path).catch(() => {});
+    }
+  }
 });
 
 exports.generateInterviewSpeech = asyncHandler(async (req, res) => {
