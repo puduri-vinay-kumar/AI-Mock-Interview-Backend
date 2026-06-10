@@ -8,7 +8,11 @@ const createInterviewValidator = [
   body("interviewType")
     .isIn(["technical", "hr", "behavioral", "coding", "mixed"])
     .withMessage("Interview type is invalid"),
+  body("questionCount")
+    .isInt({ min: 1, max: 20 })
+    .withMessage("Question count must be between 1 and 20"),
   body("duration")
+    .optional()
     .isInt({ min: 5, max: 180 })
     .withMessage("Duration must be between 5 and 180 minutes"),
   body("resumeId").optional().isMongoId().withMessage("Resume id must be valid"),

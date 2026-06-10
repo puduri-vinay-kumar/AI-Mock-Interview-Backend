@@ -1,6 +1,12 @@
-const createInitialSessionState = ({ questions = [], resumeSkills = [], mode = "rest" }) => ({
+const createInitialSessionState = ({
+  questions = [],
+  resumeSkills = [],
+  mode = "rest",
+  questionCount,
+}) => ({
   currentQuestionIndex: 0,
-  targetQuestionCount: Number(process.env.INTERVIEW_MAX_QUESTIONS) || 6,
+  targetQuestionCount:
+    Number(questionCount) || Number(process.env.INTERVIEW_MAX_QUESTIONS) || 6,
   askedQuestionIds: questions.slice(0, 1).map((question) => question.questionId),
   currentTopic: questions[0]?.topic || resumeSkills[0] || "general",
   completedTopics: [],

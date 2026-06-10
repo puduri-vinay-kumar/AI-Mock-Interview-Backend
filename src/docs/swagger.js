@@ -85,12 +85,17 @@ const options = {
         },
         InterviewCreateRequest: {
           type: "object",
-          required: ["role", "experienceLevel", "interviewType", "duration"],
+          required: ["role", "experienceLevel", "interviewType", "questionCount"],
           properties: {
             role: { type: "string", example: "Backend Developer" },
             experienceLevel: { type: "string", enum: ["fresher", "junior", "mid", "senior"] },
             interviewType: { type: "string", enum: ["technical", "hr", "behavioral", "coding", "mixed"] },
-            duration: { type: "integer", example: 30 },
+            questionCount: { type: "integer", example: 6 },
+            duration: {
+              type: "integer",
+              example: 18,
+              description: "Optional estimated duration in minutes. If omitted, backend derives it from questionCount.",
+            },
             resumeId: { type: "string", example: "6650f0fd0f5f55b6f20b3a11" },
             previousScore: { type: "number", example: 62 },
           },
@@ -400,7 +405,7 @@ const options = {
       "/api/interviews/{id}/answer": {
         post: {
           tags: ["Interviews"],
-          summary: "Submit an interview answer",
+          summary: "Submit a text answer for the current interview question",
           security: [{ bearerAuth: [] }],
           parameters: [
             {
@@ -420,6 +425,39 @@ const options = {
           },
           responses: {
             200: { description: "Answer accepted and evaluated" },
+          },
+        },
+      },
+      "/api/interviews/{id}/answer-voice": {
+        post: {
+          tags: ["Interviews"],
+          summary: "Submit a voice answer for the current interview question",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  required: ["audio"],
+                  properties: {
+                    audio: { type: "string", format: "binary" },
+                    durationSeconds: { type: "number", example: 42 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Voice answer transcribed, evaluated, and next turn returned" },
           },
         },
       },

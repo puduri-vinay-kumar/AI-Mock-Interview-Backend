@@ -6,6 +6,7 @@ const { generateFeedback } = require("../ai/feedbackGenerator");
 const { calculateWeightedScores } = require("../ai/scoringEngine");
 const { decideNextStep } = require("../ai/adaptiveEngine");
 const { generateInterviewReport } = require("../ai/reportGenerator");
+const { generateSpeech } = require("../ai/voice/textToSpeech");
 const {
   createInitialSessionState,
   appendTranscriptEntries,
@@ -20,12 +21,56 @@ const getResumeProfile = async (interview) => {
 const hasEvaluation = (answer) =>
   answer?.evaluation && typeof answer.evaluation.score === "number";
 
+const getTargetQuestionCount = (interviewLike = {}) =>
+  Number(
+    interviewLike?.sessionState?.targetQuestionCount || interviewLike?.questionCount
+  ) ||
+  Number(process.env.INTERVIEW_MAX_QUESTIONS) ||
+  6;
+
+const estimateDurationFromQuestionCount = (questionCount) => {
+  const normalizedQuestionCount = Math.max(1, Number(questionCount) || 5);
+  return Math.min(180, Math.max(5, normalizedQuestionCount * 3));
+};
+
+const buildVoiceTurnPayload = async (question, options = {}) => {
+  if (!question) {
+    return null;
+  }
+
+  let audioUrl = null;
+
+  try {
+    audioUrl = await generateSpeech(question.question, {
+      voice: options.voice,
+      instructions:
+        options.instructions ||
+        "Ask the interview question clearly, professionally, and conversationally.",
+    });
+  } catch (error) {
+    audioUrl = null;
+  }
+
+  return {
+    sessionId: options.sessionId || null,
+    questionId: question.questionId,
+    question: question.question,
+    topic: question.topic,
+    difficulty: question.difficulty,
+    type: question.type,
+    followUpPossible: question.followUpPossible,
+    audioUrl,
+    voiceMode: true,
+  };
+};
+
 const bootstrapInterviewSession = async ({
   userId,
   role,
   experienceLevel,
   interviewType,
   duration,
+  questionCount,
   resumeProfile,
   previousScore,
 }) => {
@@ -38,24 +83,33 @@ const bootstrapInterviewSession = async ({
       skills,
       previousScore,
     },
-    3
+    1
   );
 
   const sessionState = createInitialSessionState({
     questions,
     resumeSkills: skills,
+    mode: "voice",
+    questionCount,
   });
+
+  const normalizedQuestionCount = getTargetQuestionCount({ questionCount, sessionState });
+  const estimatedDuration =
+    duration || estimateDurationFromQuestionCount(normalizedQuestionCount);
+  const firstQuestion = questions[0] || null;
+  const sessionId = uuidv4();
 
   return {
     interviewPayload: {
-      sessionId: uuidv4(),
+      sessionId,
       userId,
       role,
       experienceLevel,
       interviewType,
-      duration,
+      duration: duration || estimatedDuration,
+      questionCount: normalizedQuestionCount,
       status: "scheduled",
-      currentDifficulty: questions[0]?.difficulty || "medium",
+      currentDifficulty: firstQuestion?.difficulty || "medium",
       questions,
       answers: [],
       scores: {
@@ -77,9 +131,11 @@ const bootstrapInterviewSession = async ({
       adaptiveHistory: [],
     },
     sessionMeta: {
-      firstQuestion: questions[0] || null,
+      firstQuestion,
+      currentTurn: await buildVoiceTurnPayload(firstQuestion, { sessionId }),
       resumeSkills: skills,
-      targetQuestionCount: sessionState.targetQuestionCount,
+      targetQuestionCount: normalizedQuestionCount,
+      interviewMode: "voice",
     },
   };
 };
@@ -141,7 +197,7 @@ const maybeExpandQuestionSet = async ({
   lastEvaluation,
   adaptiveHistory,
 }) => {
-  const maxQuestions = Number(process.env.INTERVIEW_MAX_QUESTIONS) || 6;
+  const maxQuestions = getTargetQuestionCount(interview);
   if (interview.questions.length >= maxQuestions || currentAnswers.length >= maxQuestions) {
     return { questions: interview.questions, nextQuestion: null, adaptiveHistory };
   }
@@ -224,7 +280,7 @@ const syncInterviewProgress = async ({
     nextTopic = expansion.nextTopic || nextTopic;
   }
 
-  const maxQuestions = Number(process.env.INTERVIEW_MAX_QUESTIONS) || 6;
+  const maxQuestions = getTargetQuestionCount(interview);
   const status =
     requestedStatus ||
     (evaluatedAnswers.length >= maxQuestions ? "completed" : "in-progress");
@@ -313,4 +369,5 @@ module.exports = {
   syncInterviewProgress,
   processRealtimeAnswer,
   finalizeInterviewSession,
+  buildVoiceTurnPayload,
 };

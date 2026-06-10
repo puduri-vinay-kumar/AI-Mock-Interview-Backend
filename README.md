@@ -22,6 +22,7 @@ Production-oriented backend for an AI Powered Mock Interview Platform, built wit
 - AI-powered question generation with fallback behavior when no API key is configured
 - Semantic answer evaluation and feedback generation
 - Adaptive difficulty and topic progression engine
+- Voice-first interview orchestration with AI-spoken questions and spoken user answers
 - Interview session state tracking for REST and realtime flows
 - Socket.io events for live interview sessions
 - Resume parsing for PDF and DOCX with AI-enhanced extraction
@@ -135,11 +136,14 @@ Interactive API docs:
 
 - `POST /api/interviews/create`
 - `POST /api/interviews/:id/answer`
+- `POST /api/interviews/:id/answer-voice`
 - `POST /api/interviews/:id/transcript`
 - `POST /api/interviews/:id/complete`
 - `GET /api/interviews/:id`
 - `GET /api/interviews/history`
 - `PUT /api/interviews/:id/status`
+
+Interview creation is now question-count driven. Send `questionCount` and the backend will drive completion after that many evaluated answers. The create and get-by-id responses include `data.session.currentTurn` or `data.currentTurn`, which contains the active question plus an `audioUrl` for AI voice playback.
 
 ### Reports
 
@@ -208,6 +212,7 @@ Server emits:
 - Difficulty rises after strong answers
 - Difficulty drops after weak answers
 - Repeated weak performance can trigger topic rotation
+- The next question can be follow-up or topic-shifted based on AI evaluation
 - Session state stores topic flow, transcript, and adaptive history
 
 ### Coding and Voice
@@ -344,8 +349,8 @@ This backend is also prepared for Render with:
 
 ## Recommended Next Steps
 
-1. Add dedicated interview session endpoints for incremental answer submission and transcript ingest.
+1. Move generated/uploaded audio and resume files to durable object storage.
 2. Move realtime session state to Redis for horizontal scaling.
 3. Queue heavy AI/report jobs with BullMQ.
-4. Add Swagger or OpenAPI docs.
-5. Add integration tests for auth, uploads, sockets, and AI flows.
+4. Add integration tests for auth, voice answers, uploads, sockets, and report generation.
+5. Add streaming voice transport over sockets when frontend is ready.

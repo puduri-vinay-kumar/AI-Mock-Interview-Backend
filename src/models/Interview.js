@@ -170,9 +170,16 @@ const interviewSchema = new mongoose.Schema(
     },
     duration: {
       type: Number,
-      required: [true, "Interview duration is required"],
+      default: 15,
       min: 5,
       max: 180,
+    },
+    questionCount: {
+      type: Number,
+      required: [true, "Question count is required"],
+      min: 1,
+      max: 20,
+      default: 5,
     },
     status: {
       type: String,
