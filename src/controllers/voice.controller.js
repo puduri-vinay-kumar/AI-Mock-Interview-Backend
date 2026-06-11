@@ -37,10 +37,10 @@ exports.transcribeInterviewAudio = asyncHandler(async (req, res) => {
 
 exports.generateInterviewSpeech = asyncHandler(async (req, res) => {
   const { text, voice, instructions } = req.body;
-  const audioUrl = await generateSpeech(text, { voice, instructions });
+  const speechResult = await generateSpeech(text, { voice, instructions });
 
   return successResponse(res, "Speech generated successfully", {
-    audioUrl,
+    ...speechResult,
   });
 });
 

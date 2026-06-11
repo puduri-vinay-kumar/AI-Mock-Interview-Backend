@@ -38,19 +38,31 @@ const buildVoiceTurnPayload = async (question, options = {}) => {
     return null;
   }
 
-  let audioUrl = null;
-  let voiceAvailable = true;
+  let speechPayload = {
+    audioUrl: null,
+    relativeAudioUrl: null,
+    voiceAvailable: false,
+    speechText: question.question,
+    fallbackMode: "browser-tts",
+    provider: "fallback",
+  };
 
   try {
-    audioUrl = await generateSpeech(question.question, {
+    speechPayload = await generateSpeech(question.question, {
       voice: options.voice,
       instructions:
         options.instructions ||
         "Ask the interview question clearly, professionally, and conversationally.",
     });
   } catch (error) {
-    audioUrl = null;
-    voiceAvailable = false;
+    speechPayload = {
+      audioUrl: null,
+      relativeAudioUrl: null,
+      voiceAvailable: false,
+      speechText: question.question,
+      fallbackMode: "browser-tts",
+      provider: "fallback",
+    };
   }
 
   return {
@@ -61,8 +73,12 @@ const buildVoiceTurnPayload = async (question, options = {}) => {
     difficulty: question.difficulty,
     type: question.type,
     followUpPossible: question.followUpPossible,
-    audioUrl,
-    voiceAvailable,
+    audioUrl: speechPayload.audioUrl,
+    relativeAudioUrl: speechPayload.relativeAudioUrl,
+    voiceAvailable: speechPayload.voiceAvailable,
+    speechText: speechPayload.speechText,
+    fallbackMode: speechPayload.fallbackMode,
+    provider: speechPayload.provider,
     voiceMode: true,
   };
 };
