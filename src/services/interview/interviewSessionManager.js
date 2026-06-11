@@ -39,6 +39,7 @@ const buildVoiceTurnPayload = async (question, options = {}) => {
   }
 
   let audioUrl = null;
+  let voiceAvailable = true;
 
   try {
     audioUrl = await generateSpeech(question.question, {
@@ -49,6 +50,7 @@ const buildVoiceTurnPayload = async (question, options = {}) => {
     });
   } catch (error) {
     audioUrl = null;
+    voiceAvailable = false;
   }
 
   return {
@@ -60,6 +62,7 @@ const buildVoiceTurnPayload = async (question, options = {}) => {
     type: question.type,
     followUpPossible: question.followUpPossible,
     audioUrl,
+    voiceAvailable,
     voiceMode: true,
   };
 };

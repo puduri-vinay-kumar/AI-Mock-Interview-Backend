@@ -33,6 +33,19 @@ const createServiceError = (message, error) => {
   return serviceError;
 };
 
+const buildPublicAudioUrl = (relativeAudioPath) => {
+  const normalizedPath = relativeAudioPath.startsWith("/")
+    ? relativeAudioPath
+    : `/${relativeAudioPath}`;
+  const baseUrl = process.env.SERVER_URL || process.env.PUBLIC_BASE_URL || "";
+
+  if (!baseUrl) {
+    return normalizedPath;
+  }
+
+  return `${baseUrl.replace(/\/+$/, "")}${normalizedPath}`;
+};
+
 const extractStructuredJson = (response) => {
   if (!response?.output_text) {
     return null;
@@ -165,9 +178,11 @@ const generateSpeechFile = async ({
     const absolutePath = path.join(voiceOutputDir, fileName);
     const buffer = Buffer.from(await response.arrayBuffer());
     await fs.promises.writeFile(absolutePath, buffer);
+    const relativeAudioUrl = `/uploads/voice/${fileName}`;
 
     return {
-      audioUrl: `/uploads/voice/${fileName}`,
+      audioUrl: buildPublicAudioUrl(relativeAudioUrl),
+      relativeAudioUrl,
       absolutePath,
       provider: "openai",
     };

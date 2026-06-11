@@ -11,6 +11,7 @@ const AUDIO_RETRY_ATTEMPTS = 2;
 const DEFAULT_RETRY_DELAY_MS = 1200;
 const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) || 5000;
 const DEFAULT_AUDIO_TIMEOUT_MS = Number(process.env.GEMINI_AUDIO_TIMEOUT_MS) || 15000;
+const DEFAULT_TTS_TIMEOUT_MS = Number(process.env.GEMINI_TTS_TIMEOUT_MS) || 20000;
 
 const isGeminiConfigured = () => Boolean(process.env.GEMINI_API_KEY);
 
@@ -308,6 +309,19 @@ const pcmToWavBuffer = (pcmBuffer, sampleRate = 24000, channels = 1, bitDepth = 
   return Buffer.concat([header, pcmBuffer]);
 };
 
+const buildPublicAudioUrl = (relativeAudioPath) => {
+  const normalizedPath = relativeAudioPath.startsWith("/")
+    ? relativeAudioPath
+    : `/${relativeAudioPath}`;
+  const baseUrl = process.env.SERVER_URL || process.env.PUBLIC_BASE_URL || "";
+
+  if (!baseUrl) {
+    return normalizedPath;
+  }
+
+  return `${baseUrl.replace(/\/+$/, "")}${normalizedPath}`;
+};
+
 const generateSpeechFile = async ({
   text,
   voice = process.env.GEMINI_TTS_VOICE || "Kore",
@@ -335,7 +349,7 @@ const generateSpeechFile = async ({
           },
         },
       }),
-      DEFAULT_REQUEST_TIMEOUT_MS,
+      DEFAULT_TTS_TIMEOUT_MS,
       "Gemini speech generation timed out"
     );
 
@@ -357,8 +371,11 @@ const generateSpeechFile = async ({
     const absolutePath = path.join(voiceOutputDir, fileName);
     await fs.promises.writeFile(absolutePath, wavBuffer);
 
+    const relativeAudioUrl = `/uploads/voice/${fileName}`;
+
     return {
-      audioUrl: `/uploads/voice/${fileName}`,
+      audioUrl: buildPublicAudioUrl(relativeAudioUrl),
+      relativeAudioUrl,
       absolutePath,
       provider: "gemini",
     };
