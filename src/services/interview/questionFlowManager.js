@@ -16,6 +16,7 @@ const buildNextQuestion = async ({
   nextTopic,
   previousScore,
   resumeProfile,
+  questionIndex,
 }) => {
   const skills = deriveResumeSkills(resumeProfile);
 
@@ -27,6 +28,8 @@ const buildNextQuestion = async ({
     previousScore,
     topic: nextTopic,
     currentDifficulty: newDifficulty,
+    questionIndex: Number(questionIndex) || 1,
+    isOpeningQuestion: false,
   });
 };
 

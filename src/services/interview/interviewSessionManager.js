@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require("uuid");
 const Resume = require("../../models/Resume");
-const { generateQuestionSet } = require("../ai/questionGenerator");
+const { generateInterviewQuestion } = require("../ai/questionGenerator");
 const { evaluateAnswer } = require("../ai/answerEvaluator");
 const { generateFeedback } = require("../ai/feedbackGenerator");
 const { calculateWeightedScores } = require("../ai/scoringEngine");
@@ -79,6 +79,7 @@ const buildVoiceTurnPayload = async (question, options = {}) => {
     speechText: speechPayload.speechText,
     fallbackMode: speechPayload.fallbackMode,
     provider: speechPayload.provider,
+    shouldAutoPlay: Boolean(options.autoPlay),
     voiceMode: true,
   };
 };
@@ -94,16 +95,18 @@ const bootstrapInterviewSession = async ({
   previousScore,
 }) => {
   const skills = deriveResumeSkills(resumeProfile);
-  const questions = await generateQuestionSet(
-    {
-      role,
-      experienceLevel,
-      interviewType,
-      skills,
-      previousScore,
-    },
-    1
-  );
+  const openingQuestion = await generateInterviewQuestion({
+    role,
+    experienceLevel,
+    interviewType,
+    skills,
+    previousScore,
+    questionIndex: 0,
+    isOpeningQuestion: true,
+    askIntroFirst: true,
+    topic: "introduction",
+  });
+  const questions = [openingQuestion];
 
   const sessionState = createInitialSessionState({
     questions,
@@ -151,7 +154,10 @@ const bootstrapInterviewSession = async ({
     },
     sessionMeta: {
       firstQuestion,
-      currentTurn: await buildVoiceTurnPayload(firstQuestion, { sessionId }),
+      currentTurn: await buildVoiceTurnPayload(firstQuestion, {
+        sessionId,
+        autoPlay: false,
+      }),
       resumeSkills: skills,
       targetQuestionCount: normalizedQuestionCount,
       interviewMode: "voice",
@@ -236,6 +242,7 @@ const maybeExpandQuestionSet = async ({
     nextTopic: nextStep.newTopic,
     previousScore: lastEvaluation.score,
     resumeProfile,
+    questionIndex: currentAnswers.length,
   });
 
   return {

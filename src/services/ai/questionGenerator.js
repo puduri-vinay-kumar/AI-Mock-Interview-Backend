@@ -46,20 +46,40 @@ const questionListSchema = {
 const difficultyPool = ["easy", "medium", "hard"];
 
 const buildFallbackQuestion = ({
-  role,
-  experienceLevel,
   interviewType,
   skills = [],
   previousScore = 0,
   topic,
+  isOpeningQuestion = false,
 }) => {
   const inferredTopic =
     topic || skills[0] || (interviewType === "coding" ? "problem solving" : "core fundamentals");
   const difficulty =
     previousScore >= 80 ? "hard" : previousScore >= 60 ? "medium" : "easy";
 
+  if (isOpeningQuestion) {
+    return {
+      question:
+        skills.length > 0
+          ? `Could you start by introducing yourself and walking me through the experience or projects where you used ${skills.slice(
+              0,
+              2
+            ).join(" and ")}?`
+          : "Could you start by introducing yourself and telling me about your background and the kind of work you've done recently?",
+      difficulty: "easy",
+      topic: "introduction",
+      followUpPossible: true,
+      type: interviewType === "hr" || interviewType === "behavioral" ? "hr" : "behavioral",
+      expectedAnswer:
+        "A clear introduction covering background, relevant experience, skills, and recent work.",
+    };
+  }
+
   return {
-    question: `Explain how you would handle ${inferredTopic} in a ${role} interview scenario as a ${experienceLevel} candidate.`,
+    question:
+      interviewType === "coding"
+        ? `How would you approach a problem involving ${inferredTopic}?`
+        : `Can you explain ${inferredTopic} and how you have applied it in practice?`,
     difficulty,
     topic: inferredTopic,
     followUpPossible: true,
@@ -136,6 +156,7 @@ const generateQuestionSet = async (context, count = 3) => {
         ...context,
         previousScore: Math.max(0, (context.previousScore || 0) + index * 5),
         topic: context.skills?.[index] || context.role,
+        isOpeningQuestion: index === 0 && Boolean(context.askIntroFirst),
       }),
       "fallback"
     )
