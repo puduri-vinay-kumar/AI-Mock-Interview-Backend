@@ -18,7 +18,7 @@ const questionSchema = new mongoose.Schema(
     followUpPossible: { type: Boolean, default: true },
     source: {
       type: String,
-      enum: ["ai", "fallback", "manual"],
+      enum: ["ai", "fallback", "manual", "curated"],
       default: "ai",
     },
     expectedAnswer: { type: String, default: "" },
