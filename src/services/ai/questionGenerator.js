@@ -46,6 +46,7 @@ const questionListSchema = {
 const difficultyPool = ["easy", "medium", "hard"];
 
 const buildFallbackQuestion = ({
+  role,
   interviewType,
   skills = [],
   previousScore = 0,
