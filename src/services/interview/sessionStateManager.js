@@ -12,6 +12,8 @@ const createInitialSessionState = ({
   completedTopics: [],
   repeatedMistakeTopics: [],
   lastScoreDelta: 0,
+  interviewStage: "opening",
+  followUpCount: 0,
   mode,
 });
 
@@ -24,6 +26,7 @@ const updateSessionStateAfterAnswer = ({
   currentQuestion,
   evaluation,
   nextTopic,
+  followUpIssued = false,
 }) => {
   const completedTopics = sessionState.completedTopics.includes(currentQuestion.topic)
     ? sessionState.completedTopics
@@ -34,6 +37,12 @@ const updateSessionStateAfterAnswer = ({
     completedTopics,
     currentTopic: nextTopic || currentQuestion.topic,
     lastScoreDelta: Number((evaluation.score - 60).toFixed(2)),
+    followUpCount: followUpIssued ? (sessionState.followUpCount || 0) + 1 : 0,
+    interviewStage: followUpIssued
+      ? "follow-up"
+      : completedTopics.length <= 1
+        ? "core-screen"
+        : "deep-dive",
   };
 };
 

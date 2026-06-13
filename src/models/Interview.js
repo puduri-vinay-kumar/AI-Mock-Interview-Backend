@@ -130,6 +130,12 @@ const sessionStateSchema = new mongoose.Schema(
     completedTopics: { type: [String], default: [] },
     repeatedMistakeTopics: { type: [String], default: [] },
     lastScoreDelta: { type: Number, default: 0 },
+    interviewStage: {
+      type: String,
+      enum: ["opening", "core-screen", "follow-up", "deep-dive"],
+      default: "opening",
+    },
+    followUpCount: { type: Number, default: 0, min: 0 },
     mode: {
       type: String,
       enum: ["rest", "socket", "voice"],

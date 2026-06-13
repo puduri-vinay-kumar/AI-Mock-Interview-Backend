@@ -23,13 +23,31 @@ const detectRepeatedMistakeTopic = (adaptiveHistory = [], latestTopic) => {
   return repetitions >= 2;
 };
 
-const chooseNextTopic = ({ latestTopic, resumeSkills = [], interviewType, repeatedMistake }) => {
+const chooseNextTopic = ({
+  latestTopic,
+  resumeSkills = [],
+  interviewType,
+  repeatedMistake,
+  blueprintTopics = [],
+  completedTopics = [],
+}) => {
   if (repeatedMistake) {
     const alternativeSkill = resumeSkills.find((skill) => skill !== latestTopic);
-    return alternativeSkill || (interviewType === "hr" ? "communication" : "problem solving");
+    const alternativeBlueprintTopic = blueprintTopics.find(
+      (topic) => topic !== latestTopic && !completedTopics.includes(topic)
+    );
+    return (
+      alternativeSkill ||
+      alternativeBlueprintTopic ||
+      (interviewType === "hr" ? "communication" : "problem solving")
+    );
   }
 
-  return latestTopic || resumeSkills[0] || "core fundamentals";
+  const nextBlueprintTopic = blueprintTopics.find(
+    (topic) => topic !== latestTopic && !completedTopics.includes(topic)
+  );
+
+  return latestTopic || resumeSkills[0] || nextBlueprintTopic || "core fundamentals";
 };
 
 const decideNextStep = ({
@@ -38,25 +56,46 @@ const decideNextStep = ({
   adaptiveHistory = [],
   resumeSkills = [],
   interviewType,
+  currentQuestion,
+  sessionState = {},
+  blueprintTopics = [],
+  followUpThreshold = 75,
 }) => {
   const newDifficulty = adjustDifficulty(currentDifficulty, evaluation.score);
   const repeatedMistake = detectRepeatedMistakeTopic(adaptiveHistory, evaluation.topic);
+  const shouldFollowUp =
+    Boolean(currentQuestion?.followUpPossible) &&
+    !repeatedMistake &&
+    evaluation.score >= followUpThreshold &&
+    (sessionState.followUpCount || 0) < 1;
   const newTopic = chooseNextTopic({
     latestTopic: evaluation.topic,
     resumeSkills,
     interviewType,
     repeatedMistake,
+    blueprintTopics,
+    completedTopics: sessionState.completedTopics || [],
   });
 
   return {
     newDifficulty,
-    newTopic,
+    newTopic: shouldFollowUp ? evaluation.topic || newTopic : newTopic,
     repeatedMistake,
+    shouldFollowUp,
+    followUpContext: shouldFollowUp
+      ? {
+          topic: evaluation.topic || currentQuestion?.topic || newTopic,
+          type: currentQuestion?.type || "technical",
+          anchorQuestionId: currentQuestion?.questionId || "",
+        }
+      : null,
     reason: repeatedMistake
       ? "Repeated weakness detected. Switching topic to rebuild confidence."
-      : newDifficulty !== currentDifficulty
-        ? "Difficulty adjusted based on latest answer performance."
-        : "Maintain current progression and continue exploring the topic.",
+      : shouldFollowUp
+        ? "Strong answer detected. Ask a deeper follow-up on the same topic."
+        : newDifficulty !== currentDifficulty
+          ? "Difficulty adjusted based on latest answer performance."
+          : "Maintain current progression and continue exploring the topic.",
   };
 };
 

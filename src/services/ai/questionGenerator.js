@@ -4,6 +4,8 @@ const {
   isAIProviderConfigured,
 } = require("./provider.service");
 const { getQuestionPrompt } = require("./promptTemplates");
+const { resolveRoleBlueprint } = require("./roleBlueprints");
+const { resolveLevelRule } = require("./levelRules");
 const logger = require("../../utils/logger");
 
 const singleQuestionSchema = {
@@ -45,130 +47,6 @@ const questionListSchema = {
 
 const difficultyPool = ["easy", "medium", "hard"];
 
-const DOMAIN_PROFILES = {
-  frontend: {
-    label: "Frontend Engineering",
-    allowedTopics: [
-      "javascript",
-      "typescript",
-      "react",
-      "next.js",
-      "state management",
-      "component design",
-      "frontend performance",
-      "accessibility",
-      "html",
-      "css",
-      "api integration",
-      "testing",
-    ],
-    forbiddenKeywords: [
-      "mongodb schema",
-      "database indexing",
-      "sql joins",
-      "microservices",
-      "rest api versioning",
-      "express middleware",
-      "message queue",
-      "redis cache",
-      "kubernetes",
-    ],
-  },
-  backend: {
-    label: "Backend Engineering",
-    allowedTopics: [
-      "node.js",
-      "express",
-      "apis",
-      "authentication",
-      "databases",
-      "mongodb",
-      "sql",
-      "caching",
-      "system design",
-      "performance",
-      "scalability",
-      "testing",
-    ],
-    forbiddenKeywords: [
-      "css animation",
-      "flexbox",
-      "dom events",
-      "react hooks",
-      "component props",
-      "tailwind",
-      "figma",
-      "semantic html",
-    ],
-  },
-  fullstack: {
-    label: "Full Stack Engineering",
-    allowedTopics: [
-      "frontend architecture",
-      "backend architecture",
-      "api design",
-      "authentication",
-      "react",
-      "node.js",
-      "databases",
-      "deployment",
-      "performance",
-      "testing",
-    ],
-    forbiddenKeywords: [],
-  },
-  vlsi: {
-    label: "VLSI Engineering",
-    allowedTopics: [
-      "digital design",
-      "rtl",
-      "verilog",
-      "systemverilog",
-      "timing analysis",
-      "verification",
-      "physical design",
-      "semiconductor fundamentals",
-      "synthesis",
-      "clock domains",
-    ],
-    forbiddenKeywords: [
-      "react hooks",
-      "css",
-      "mongodb",
-      "express",
-      "rest api",
-      "node.js",
-      "ui components",
-    ],
-  },
-  hr: {
-    label: "HR and Behavioral",
-    allowedTopics: [
-      "introduction",
-      "experience",
-      "ownership",
-      "teamwork",
-      "communication",
-      "conflict resolution",
-      "strengths",
-      "career goals",
-    ],
-    forbiddenKeywords: [],
-  },
-  general: {
-    label: "General Technical",
-    allowedTopics: [
-      "fundamentals",
-      "projects",
-      "problem solving",
-      "communication",
-      "design",
-      "debugging",
-    ],
-    forbiddenKeywords: [],
-  },
-};
-
 const normalizeText = (value = "") =>
   String(value)
     .toLowerCase()
@@ -176,56 +54,58 @@ const normalizeText = (value = "") =>
     .replace(/\s+/g, " ")
     .trim();
 
-const inferInterviewDomain = ({ role = "", interviewType = "", skills = [] }) => {
-  const roleText = normalizeText(role);
-  const skillText = normalizeText(skills.join(" "));
-  const interviewTypeText = normalizeText(interviewType);
+const buildInterviewState = (context, domainProfile, levelRule) => {
+  const priorQuestions = context.priorQuestions || [];
+  const priorTopics = context.priorTopics || [];
 
-  if (
-    interviewTypeText.includes("hr") ||
-    interviewTypeText.includes("behavioral")
-  ) {
-    return "hr";
-  }
-
-  if (
-    /vlsi|rtl|asic|verilog|systemverilog|physical design|timing/.test(
-      `${roleText} ${skillText}`
-    )
-  ) {
-    return "vlsi";
-  }
-
-  if (/full stack|fullstack/.test(roleText)) {
-    return "fullstack";
-  }
-
-  if (
-    /frontend|front end|ui|web/.test(roleText) ||
-    /react|next js|nextjs|css|html|frontend/.test(skillText)
-  ) {
-    return "frontend";
-  }
-
-  if (
-    /backend|back end|api|server/.test(roleText) ||
-    /node js|express|mongodb|sql|redis|backend/.test(skillText)
-  ) {
-    return "backend";
-  }
-
-  return "general";
-};
-
-const getDomainProfile = (context) => {
-  const domainKey = inferInterviewDomain(context);
   return {
-    domainKey,
-    ...(DOMAIN_PROFILES[domainKey] || DOMAIN_PROFILES.general),
+    roleKey: domainProfile.domainKey,
+    roleLabel: domainProfile.label,
+    levelKey: levelRule.key,
+    levelLabel: levelRule.label,
+    stage: context.isOpeningQuestion
+      ? "opening"
+      : context.isFollowUp
+        ? "follow-up"
+        : context.questionIndex <= 2
+          ? "core-screen"
+          : "deep-dive",
+    allowedTopics: domainProfile.allowedTopics,
+    starterTopics: domainProfile.starterTopics,
+    priorQuestions,
+    priorTopics,
+    lastTopic:
+      priorTopics[priorTopics.length - 1] ||
+      context.topic ||
+      domainProfile.starterTopics[0] ||
+      "general",
+    followUpContext: context.followUpContext || null,
   };
 };
 
-const buildOpeningQuestion = ({ skills = [], interviewType }) => {
+const clampDifficultyToLevel = (difficulty, levelRule) => {
+  if (levelRule.preferredDifficulties.includes(difficulty)) {
+    return difficulty;
+  }
+  return levelRule.defaultDifficulty;
+};
+
+const getDomainProfile = (context) => {
+  const blueprint = resolveRoleBlueprint(context);
+  return {
+    domainKey: blueprint.key,
+    label: blueprint.label,
+    allowedTopics: blueprint.coreTopics,
+    starterTopics: blueprint.starterTopics,
+    allowedQuestionTypes: blueprint.allowedQuestionTypes,
+    forbiddenKeywords: blueprint.forbiddenKeywords,
+    blueprint,
+  };
+};
+
+const buildOpeningQuestion = ({ skills = [], interviewType, domainProfile }) => {
+  const starterTopic = domainProfile?.starterTopics?.[1] || skills[0] || "your recent work";
+
   if (interviewType === "hr" || interviewType === "behavioral") {
     return {
       question:
@@ -255,7 +135,7 @@ const buildOpeningQuestion = ({ skills = [], interviewType }) => {
 
   return {
     question:
-      "Could you start by introducing yourself and telling me about your background and recent hands-on work?",
+      `Could you start by introducing yourself and telling me about your background and any recent hands-on work related to ${starterTopic}?`,
     difficulty: "easy",
     topic: "introduction",
     followUpPossible: true,
@@ -303,6 +183,16 @@ const chooseFallbackTopic = ({ topic, skills = [], priorTopics = [], profile, in
     return skillMatch;
   }
 
+  const starterTopic = profile.starterTopics?.find(
+    (item) =>
+      item &&
+      !normalizedPriorTopics.includes(normalizeText(item)) &&
+      !violatesDomainConstraints(item, profile)
+  );
+  if (starterTopic) {
+    return starterTopic;
+  }
+
   const profileTopic = profile.allowedTopics.find(
     (item) =>
       item &&
@@ -325,8 +215,12 @@ const buildFallbackQuestion = ({
   isOpeningQuestion = false,
   priorTopics = [],
   domainProfile,
+  levelRule,
+  isFollowUp = false,
+  followUpContext,
 }) => {
   const profile = domainProfile || getDomainProfile({ role, interviewType, skills });
+  const resolvedLevelRule = levelRule || resolveLevelRule();
   const inferredTopic = chooseFallbackTopic({
     topic,
     skills,
@@ -334,11 +228,25 @@ const buildFallbackQuestion = ({
     profile,
     interviewType,
   });
-  const difficulty =
-    previousScore >= 80 ? "hard" : previousScore >= 60 ? "medium" : "easy";
+  const difficulty = clampDifficultyToLevel(
+    previousScore >= 80 ? "hard" : previousScore >= 60 ? "medium" : "easy",
+    resolvedLevelRule
+  );
 
   if (isOpeningQuestion) {
-    return buildOpeningQuestion({ skills, interviewType });
+    return buildOpeningQuestion({ skills, interviewType, domainProfile: profile });
+  }
+
+  if (isFollowUp) {
+    return {
+      question: `Can you go one level deeper on ${followUpContext?.topic || inferredTopic}, especially around implementation choices, tradeoffs, or edge cases?`,
+      difficulty: clampDifficultyToLevel("medium", resolvedLevelRule),
+      topic: followUpContext?.topic || inferredTopic,
+      followUpPossible: false,
+      type: followUpContext?.type || (interviewType === "coding" ? "coding" : "technical"),
+      expectedAnswer:
+        "A deeper explanation covering tradeoffs, implementation details, edge cases, or debugging decisions.",
+    };
   }
 
   return {
@@ -373,6 +281,39 @@ const normalizeQuestion = (question, source) => ({
   source,
 });
 
+const doesQuestionTypeFitBlueprint = (questionType, profile) => {
+  return profile.allowedQuestionTypes.includes(questionType);
+};
+
+const validateQuestionResponse = (question, context, profile, levelRule) => {
+  if (!question?.question || question.question.length < 12) {
+    return { valid: false, reason: "Question text is too short or empty." };
+  }
+
+  if (isQuestionDuplicate(question.question, context.priorQuestions || [])) {
+    return { valid: false, reason: "Question duplicates a prior question." };
+  }
+
+  if (
+    !context.isOpeningQuestion &&
+    context.interviewType !== "hr" &&
+    context.interviewType !== "behavioral" &&
+    violatesDomainConstraints(question.question, profile)
+  ) {
+    return { valid: false, reason: "Question violates role domain constraints." };
+  }
+
+  if (!doesQuestionTypeFitBlueprint(question.type || "technical", profile)) {
+    return { valid: false, reason: "Question type does not fit the role blueprint." };
+  }
+
+  if (!levelRule.preferredDifficulties.includes(question.difficulty)) {
+    question.difficulty = clampDifficultyToLevel(question.difficulty, levelRule);
+  }
+
+  return { valid: true, reason: "" };
+};
+
 const isQuestionValidForContext = (question, context, profile) => {
   if (!question?.question) {
     return false;
@@ -396,16 +337,31 @@ const isQuestionValidForContext = (question, context, profile) => {
 
 const generateInterviewQuestion = async (context) => {
   const domainProfile = getDomainProfile(context);
+  const levelRule = resolveLevelRule(context.experienceLevel);
+  const interviewState = buildInterviewState(context, domainProfile, levelRule);
   const promptContext = {
     ...context,
     domainLabel: domainProfile.label,
     domainTopics: domainProfile.allowedTopics,
+    starterTopics: domainProfile.starterTopics,
+    allowedQuestionTypes: domainProfile.allowedQuestionTypes,
     forbiddenTopics: domainProfile.forbiddenKeywords,
     priorQuestions: context.priorQuestions || [],
+    levelRule: {
+      key: levelRule.key,
+      label: levelRule.label,
+      preferredDifficulties: levelRule.preferredDifficulties,
+      answerExpectation: levelRule.answerExpectation,
+      topicDepth: levelRule.topicDepth,
+    },
+    interviewState,
   };
 
   if (context.isOpeningQuestion) {
-    return normalizeQuestion(buildOpeningQuestion(context), "curated");
+    return normalizeQuestion(
+      buildOpeningQuestion({ ...context, domainProfile }),
+      "curated"
+    );
   }
 
   const prompt = getQuestionPrompt(promptContext);
@@ -421,13 +377,19 @@ const generateInterviewQuestion = async (context) => {
 
       if (aiResult) {
         const normalizedQuestion = normalizeQuestion(aiResult, "ai");
+        const validation = validateQuestionResponse(
+          normalizedQuestion,
+          context,
+          domainProfile,
+          levelRule
+        );
 
-        if (isQuestionValidForContext(normalizedQuestion, context, domainProfile)) {
+        if (validation.valid) {
           return normalizedQuestion;
         }
 
         logger.warn(
-          "AI question rejected due to repetition or domain mismatch. Falling back to curated question."
+          `AI question rejected. Reason: ${validation.reason}. Falling back to curated question.`
         );
       }
     } catch (error) {
@@ -439,6 +401,7 @@ const generateInterviewQuestion = async (context) => {
     buildFallbackQuestion({
       ...context,
       domainProfile,
+      levelRule,
     }),
     "fallback"
   );
@@ -446,12 +409,24 @@ const generateInterviewQuestion = async (context) => {
 
 const generateQuestionSet = async (context, count = 3) => {
   const domainProfile = getDomainProfile(context);
+  const levelRule = resolveLevelRule(context.experienceLevel);
+  const interviewState = buildInterviewState(context, domainProfile, levelRule);
   const promptContext = {
     ...context,
     domainLabel: domainProfile.label,
     domainTopics: domainProfile.allowedTopics,
+    starterTopics: domainProfile.starterTopics,
+    allowedQuestionTypes: domainProfile.allowedQuestionTypes,
     forbiddenTopics: domainProfile.forbiddenKeywords,
     priorQuestions: context.priorQuestions || [],
+    levelRule: {
+      key: levelRule.key,
+      label: levelRule.label,
+      preferredDifficulties: levelRule.preferredDifficulties,
+      answerExpectation: levelRule.answerExpectation,
+      topicDepth: levelRule.topicDepth,
+    },
+    interviewState,
   };
   const prompt = `${getQuestionPrompt(promptContext)} Generate ${count} varied questions that progress logically.`;
 
@@ -468,7 +443,13 @@ const generateQuestionSet = async (context, count = 3) => {
         const normalizedQuestions = aiResult.questions
           .map((question) => normalizeQuestion(question, "ai"))
           .filter((question, index, list) => {
-            if (!isQuestionValidForContext(question, context, domainProfile)) {
+            const validation = validateQuestionResponse(
+              question,
+              context,
+              domainProfile,
+              levelRule
+            );
+            if (!validation.valid) {
               return false;
             }
 
@@ -497,6 +478,7 @@ const generateQuestionSet = async (context, count = 3) => {
         isOpeningQuestion: index === 0 && Boolean(context.askIntroFirst),
         priorTopics: [...(context.priorTopics || []), ...context.skills.slice(0, index)],
         domainProfile,
+        levelRule,
       }),
       "fallback"
     )

@@ -1,6 +1,8 @@
 const { v4: uuidv4 } = require("uuid");
 const Resume = require("../../models/Resume");
 const { generateInterviewQuestion } = require("../ai/questionGenerator");
+const { resolveRoleBlueprint } = require("../ai/roleBlueprints");
+const { resolveLevelRule } = require("../ai/levelRules");
 const { evaluateAnswer } = require("../ai/answerEvaluator");
 const { generateFeedback } = require("../ai/feedbackGenerator");
 const { calculateWeightedScores } = require("../ai/scoringEngine");
@@ -95,6 +97,8 @@ const bootstrapInterviewSession = async ({
   previousScore,
 }) => {
   const skills = deriveResumeSkills(resumeProfile);
+  const roleBlueprint = resolveRoleBlueprint({ role, interviewType, skills });
+  const levelRule = resolveLevelRule(experienceLevel);
   const openingQuestion = await generateInterviewQuestion({
     role,
     experienceLevel,
@@ -105,6 +109,8 @@ const bootstrapInterviewSession = async ({
     isOpeningQuestion: true,
     askIntroFirst: true,
     topic: "introduction",
+    priorQuestions: [],
+    priorTopics: [],
   });
   const questions = [openingQuestion];
 
@@ -228,12 +234,23 @@ const maybeExpandQuestionSet = async ({
   }
 
   const resumeProfile = await getResumeProfile(interview);
+  const resumeSkills = deriveResumeSkills(resumeProfile);
+  const roleBlueprint = resolveRoleBlueprint({
+    role: interview.role,
+    interviewType: interview.interviewType,
+    skills: resumeSkills,
+  });
+  const levelRule = resolveLevelRule(interview.experienceLevel);
   const nextStep = decideNextStep({
     currentDifficulty: interview.currentDifficulty,
     evaluation: lastEvaluation,
     adaptiveHistory,
-    resumeSkills: deriveResumeSkills(resumeProfile),
+    resumeSkills,
     interviewType: interview.interviewType,
+    currentQuestion: interview.questions[currentAnswers.length - 1] || interview.questions[0],
+    sessionState: interview.sessionState?.toObject?.() || interview.sessionState || {},
+    blueprintTopics: roleBlueprint.starterTopics.concat(roleBlueprint.coreTopics),
+    followUpThreshold: levelRule.followUpThreshold,
   });
 
   const nextQuestion = await buildNextQuestion({
@@ -243,6 +260,8 @@ const maybeExpandQuestionSet = async ({
     previousScore: lastEvaluation.score,
     resumeProfile,
     questionIndex: currentAnswers.length,
+    isFollowUp: nextStep.shouldFollowUp,
+    followUpContext: nextStep.followUpContext,
   });
 
   return {
@@ -262,6 +281,7 @@ const maybeExpandQuestionSet = async ({
     ],
     nextDifficulty: nextStep.newDifficulty,
     nextTopic: nextStep.newTopic,
+    shouldFollowUp: nextStep.shouldFollowUp,
   };
 };
 
@@ -291,6 +311,7 @@ const syncInterviewProgress = async ({
   let currentDifficulty = interview.currentDifficulty;
   let nextQuestion = null;
   let nextTopic = interview.sessionState?.currentTopic;
+  let followUpIssued = false;
 
   if (lastAnswer && requestedStatus !== "completed") {
     const expansion = await maybeExpandQuestionSet({
@@ -304,6 +325,7 @@ const syncInterviewProgress = async ({
     nextQuestion = expansion.nextQuestion;
     currentDifficulty = expansion.nextDifficulty || currentDifficulty;
     nextTopic = expansion.nextTopic || nextTopic;
+    followUpIssued = Boolean(expansion.shouldFollowUp);
   }
 
   const maxQuestions = getTargetQuestionCount(interview);
@@ -322,6 +344,7 @@ const syncInterviewProgress = async ({
       : questions[0],
     evaluation: lastAnswer?.evaluation || { score: 0 },
     nextTopic,
+    followUpIssued,
   });
 
   return {

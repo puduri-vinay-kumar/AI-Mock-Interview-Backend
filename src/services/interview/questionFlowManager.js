@@ -17,6 +17,8 @@ const buildNextQuestion = async ({
   previousScore,
   resumeProfile,
   questionIndex,
+  isFollowUp = false,
+  followUpContext = null,
 }) => {
   const skills = deriveResumeSkills(resumeProfile);
 
@@ -30,6 +32,8 @@ const buildNextQuestion = async ({
     currentDifficulty: newDifficulty,
     questionIndex: Number(questionIndex) || 1,
     isOpeningQuestion: false,
+    isFollowUp,
+    followUpContext,
     priorQuestions: interview.questions.map((question) => question.question),
     priorTopics: interview.questions.map((question) => question.topic).filter(Boolean),
   });
